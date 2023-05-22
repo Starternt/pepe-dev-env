@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  graylog:
+    build: scripts/graylog
+    container_name: pepe-graylog
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=somepasswordsentence #admin admin
+      - GRAYLOG_ROOT_PASSWORD_SHA2=password
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://127.0.0.1:9090/
+      - GRAYLOG_ELASTICSEARCH_VERSION=6
+    depends_on:
+      - registrator
+    ports:
+      - 9090:9000
+    labels:
+      - "SERVICE_12201_NAME=graylog"
+      - "SERVICE_12201_TAGS=develop"
+      - "SERVICE_9000_IGNORE=true"
+    networks:
+      - internal
+
+  consul:
+    image: consul:latest
+    container_name: pepe-consul
+    command: agent -server -client 0.0.0.0 -bootstrap -ui
+    ports:
+      - 8500:8500
+    volumes:
+      - consul-data:/consul/data
+    labels:
+      - "SERVICE_IGNORE=true"
+    networks:
+      - internal
+
+  consul-init:
+    image: consul:latest
+    container_name: pepe-consul-init
+    command: ["/scripts/consul-init.sh"]
+    volumes:
+      - ./scripts/consul:/scripts
+    environment:
+      CONSUL_HOST: consul
+      CDN_URL: http://${HOSTNAME}:1080/static/
+    depends_on:
+      - consul
+    labels:
+      - "SERVICE_IGNORE=true"
+    networks:
+      - internal
+
+  consul-template:
+    image: hashicorp/consul-template:alpine
+    container_name: "consul-template-dev"
+    hostname: consul-template
+    networks:
+      - internal
+    volumes:
+      - "./consul-template.hcl:/data/consul-template.hcl:ro"
+      - "./src/config:/config"
+    command: consul-template -config /data/consul-template.hcl
+
+  registrator:
+    image: gliderlabs/registrator
+    container_name: pepe-registrator
+    entrypoint: /bin/registrator -internal consul://consul:8500
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock
+    depends_on:
+      - consul
+    networks:
+      - internal
+
+  vault:
+    image: vault:latest
+    container_name: pepe-vault
+    ports:
+      - 8200:8200
+    volumes:
+      - ./etc/vault:/vault/config
+      - ./scripts/vault:/scripts
+    command: server
+    depends_on:
+      - consul
+    labels:
+      - "SERVICE_8200_NAME=vault"
+      - "SERVICE_8200_TAGS=develop"
+    networks:
+      - internal
+
+  vault-init:
+    image: vault:latest
+    command: ["/scripts/vault-init.sh", "--init"]
+    container_name: pepe-vault-init
+    volumes:
+      - ./scripts/vault:/scripts
+    environment:
+      VAULT_HOST: vault
+    depends_on:
+      - vault
+    labels:
+      - "SERVICE_IGNORE=true"
+    networks:
+      - internal
+
+volumes:
+  consul-data:
+
+networks:
+  # Xdebug config
+  internal:
+    driver: bridge
+    name: pepe-network-test
