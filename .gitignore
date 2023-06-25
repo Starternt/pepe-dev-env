@@ -1,0 +1,6 @@
+/graylog_journal/
+###> IDE ###
+.idea/*
+###< IDE ###
+/mongo_data/
+/es_data/
